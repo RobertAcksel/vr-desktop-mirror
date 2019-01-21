@@ -20,6 +20,8 @@ public:
 	int                     g_width = -1;
 	int                     g_height = -1;
 	int						g_needReinit = 0;
+	int g_originLeft = 0;
+	int g_originTop = 0;
 	DXGI_OUTDUPL_FRAME_INFO g_frameInfo;
 };
 
@@ -32,7 +34,11 @@ namespace
 	int g_nDesks = 0;
 }
 
-
+class Point {
+public:
+	int X = 0;
+	int Y = 0;
+};
 
 extern "C"
 {
@@ -40,8 +46,9 @@ extern "C"
 	{
 		for (int i = 0; i < g_nDesks; i++)
 		{
-			if (g_desks[i].g_deskDupl != nullptr)
-				g_desks[i].g_deskDupl->Release();
+			auto & desk = g_desks[i];
+			if (desk.g_deskDupl != nullptr)
+				desk.g_deskDupl->Release();
 		}
 		g_nDesks = 0;
 	}
@@ -49,14 +56,15 @@ extern "C"
 	int DeskAdd()
 	{
 		int i = g_nDesks;
-		g_desks[i].g_deskDupl = nullptr;
-		g_desks[i].g_texture = nullptr;
-		g_desks[i].g_isPointerVisible = false;
-		g_desks[i].g_pointerX = -1;
-		g_desks[i].g_pointerY = -1;
-		g_desks[i].g_width = -1;
-		g_desks[i].g_height = -1;
-		g_desks[i].g_needReinit = 0;
+		auto & desk = g_desks[i];
+		desk.g_deskDupl = nullptr;
+		desk.g_texture = nullptr;
+		desk.g_isPointerVisible = false;
+		desk.g_pointerX = -1;
+		desk.g_pointerY = -1;
+		desk.g_width = -1;
+		desk.g_height = -1;
+		desk.g_needReinit = 0;
 		g_nDesks++;
 		return i;
 	}
@@ -67,14 +75,13 @@ extern "C"
 
 		g_needReinit = 0;
 
-
-		IDXGIFactory1* factory;
+		IDXGIFactory1* factory = nullptr;
 		CreateDXGIFactory1(__uuidof(IDXGIFactory1), reinterpret_cast<void**>(&factory));
 
-		IDXGIAdapter1* adapter;
+		IDXGIAdapter1* adapter = nullptr;
 		for (int i = 0; (factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND); ++i)
 		{
-			IDXGIOutput* output;
+			IDXGIOutput* output = nullptr;
 			for (int j = 0; (adapter->EnumOutputs(j, &output) != DXGI_ERROR_NOT_FOUND); j++)
 			{
 				DXGI_OUTPUT_DESC outputDesc;
@@ -88,14 +95,16 @@ extern "C"
 				//if (monitorInfo.dwFlags == MONITORINFOF_PRIMARY)
 				{
 					int iDesk = DeskAdd();
+					auto & desk = g_desks[iDesk];
+					desk.g_width = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
+					desk.g_height = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
 
-					g_desks[iDesk].g_width = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;					
-					g_desks[iDesk].g_height = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
+					desk.g_originLeft = monitorInfo.rcMonitor.left;
+					desk.g_originTop = monitorInfo.rcMonitor.top;
 
 					auto device = g_unity->Get<IUnityGraphicsD3D11>()->GetDevice();
-					IDXGIOutput1* output1;
-					output1 = reinterpret_cast<IDXGIOutput1*>(output);
-					output1->DuplicateOutput(device, &g_desks[iDesk].g_deskDupl);
+					IDXGIOutput1* output1 = reinterpret_cast<IDXGIOutput1*>(output);
+					output1->DuplicateOutput(device, &desk.g_deskDupl);
 				}
 
 				output->Release();
@@ -122,7 +131,9 @@ extern "C"
 	{
 		for (int iDesk = 0; iDesk < g_nDesks; iDesk++)
 		{
-			if (g_desks[iDesk].g_deskDupl == nullptr || g_desks[iDesk].g_texture == nullptr)
+			auto & desk = g_desks[iDesk];
+
+			if (desk.g_deskDupl == nullptr || desk.g_texture == nullptr)
 			{
 				g_needReinit++;
 				return;
@@ -131,23 +142,25 @@ extern "C"
 			IDXGIResource* resource = nullptr;
 
 			const UINT timeout = 0; // ms
-			HRESULT resultAcquire = g_desks[iDesk].g_deskDupl->AcquireNextFrame(timeout, &g_desks[iDesk].g_frameInfo, &resource);
+			HRESULT resultAcquire = desk.g_deskDupl->AcquireNextFrame(timeout, &desk.g_frameInfo, &resource);
 			if (resultAcquire != S_OK)
 			{
-				g_needReinit++;
+				if (resultAcquire == DXGI_ERROR_ACCESS_LOST) {
+					g_needReinit++;
+				}
 				return;
 			}
 
-			g_desks[iDesk].g_isPointerVisible = (g_desks[iDesk].g_frameInfo.PointerPosition.Visible == TRUE);
-			g_desks[iDesk].g_pointerX = g_desks[iDesk].g_frameInfo.PointerPosition.Position.x;
-			g_desks[iDesk].g_pointerY = g_desks[iDesk].g_frameInfo.PointerPosition.Position.y;
+			desk.g_isPointerVisible = (desk.g_frameInfo.PointerPosition.Visible == TRUE);
+			desk.g_pointerX = desk.g_frameInfo.PointerPosition.Position.x;
+			desk.g_pointerY = desk.g_frameInfo.PointerPosition.Position.y;
 
 			ID3D11Texture2D* texture;
 			HRESULT resultQuery = resource->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&texture));
-			resource->Release();
 
 			if (resultQuery != S_OK)
 			{
+				resource->Release();
 				g_needReinit++;
 				return;
 			}
@@ -155,9 +168,10 @@ extern "C"
 			ID3D11DeviceContext* context;
 			auto device = g_unity->Get<IUnityGraphicsD3D11>()->GetDevice();
 			device->GetImmediateContext(&context);
-			context->CopyResource(g_desks[iDesk].g_texture, texture);
+			context->CopyResource(desk.g_texture, texture);
 
-			g_desks[iDesk].g_deskDupl->ReleaseFrame();
+			desk.g_deskDupl->ReleaseFrame();
+			resource->Release();
 		}
 
 		g_needReinit = 0;
@@ -201,6 +215,14 @@ extern "C"
 	UNITY_INTERFACE_EXPORT int UNITY_INTERFACE_API DesktopCapturePlugin_GetPointerY(int iDesk)
 	{
 		return g_desks[iDesk].g_pointerY;
+	}
+
+	UNITY_INTERFACE_EXPORT Point UNITY_INTERFACE_API DesktopCapturePlugin_GetOrigin(int iDesk)
+	{
+		Point p;
+		p.Y = g_desks[iDesk].g_originTop;
+		p.X = g_desks[iDesk].g_originLeft;
+		return p;
 	}
 
 	UNITY_INTERFACE_EXPORT void UNITY_INTERFACE_API DesktopCapturePlugin_SetTexturePtr(int iDesk, void* texture)

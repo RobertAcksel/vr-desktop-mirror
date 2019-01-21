@@ -1,6 +1,4 @@
-﻿#define VDM_SteamVR
-
-using UnityEngine;
+﻿using UnityEngine;
 using System;
 using System.Collections;
 using System.Runtime.InteropServices;
@@ -57,56 +55,57 @@ public class VdmDesktop : MonoBehaviour
     // Keyboard and Mouse
     private float m_lastShowClickStart = 0;
 
-    void Start()
-    {
-        m_manager = transform.parent.GetComponent<VdmDesktopManager>();
-        m_line = GetComponent<LineRenderer>();
-        m_renderer = GetComponent<Renderer>();
-        m_collider = GetComponent<MeshCollider>();
+	private void Awake()
+	{
+		m_line = GetComponent<LineRenderer>();
+		m_renderer = GetComponent<Renderer>();
+		m_collider = GetComponent<MeshCollider>();
+	}
 
+	void Start()
+    {
+	    m_manager = GetComponentInParent<VdmDesktopManager>();
         m_manager.Connect(this);
-
-        Hide();
     }
 
-    public void Update()
-    {
-        bool skip = false;
-        if (Visible() == false)
-            skip = true;
-        if ((m_controllerAttach) && (m_zoom == false))
-            skip = true;
-        if(skip == false)    
-        {   
-            float step = 0;
-            if (Time.time - m_positionAnimationStart > 1)
-                step = 1;
-            else
-                step = Time.time - m_positionAnimationStart;
+//    public void Update()
+//    {
+//        bool skip = false;
+//        if (Visible() == false)
+//            skip = true;
+//#if VDM_SteamVR
+//        if ((m_controllerAttach) && (m_zoom == false))
+//            skip = true;
+//#endif
+//        if(skip == false)    
+//        {   
+//            float step = 0;
+//            if (Time.time - m_positionAnimationStart > 1)
+//                step = 1;
+//            else
+//                step = Time.time - m_positionAnimationStart;
 
-            Vector3 positionDestination;
-            Quaternion rotationDestination;
+//            Vector3 positionDestination;
+//            Quaternion rotationDestination;
 
-            if (m_zoom)
-            {
-                positionDestination = m_positionZoomed;
-                rotationDestination = m_rotationZoomed;
-            }
-            else
-            {
-                positionDestination = m_positionNormal;
-                rotationDestination = m_rotationNormal;
-            }
+//            if (m_zoom)
+//            {
+//                positionDestination = m_positionZoomed;
+//                rotationDestination = m_rotationZoomed;
+//            }
+//            else
+//            {
+//                positionDestination = m_positionNormal;
+//                rotationDestination = m_rotationNormal;
+//            }
 
-            if (transform.position != positionDestination)
-                transform.position = Vector3.Lerp(transform.position, positionDestination, step);
+//            if (transform.position != positionDestination)
+//                transform.position = Vector3.Lerp(transform.position, positionDestination, step);
 
-            if (transform.rotation != rotationDestination)
-                transform.rotation = Quaternion.Lerp(transform.rotation, rotationDestination, step);
-            
-        }
-        
-    }
+//            if (transform.rotation != rotationDestination)
+//                transform.rotation = Quaternion.Lerp(transform.rotation, rotationDestination, step);
+//        }
+//    }
     
     void OnEnable()
     {
@@ -225,7 +224,7 @@ public class VdmDesktop : MonoBehaviour
         }
     }
 
-#if VDM_SteamVR 
+#if VDM_SteamVR
     public void CheckController(SteamVR_TrackedObject controller)
     {
         SteamVR_Controller.Device input = null;
