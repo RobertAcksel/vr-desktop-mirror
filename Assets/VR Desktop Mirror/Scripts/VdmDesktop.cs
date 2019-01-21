@@ -1,19 +1,16 @@
 ﻿using UnityEngine;
 using System;
-using System.Collections;
 using System.Runtime.InteropServices;
-using System.Xml;
 
 public class VdmDesktop : MonoBehaviour
 {
     [HideInInspector]
-    public int Screen = 0;
+    public int ScreenId = 0;
     [HideInInspector]
     public int ScreenIndex = 0;
 
     [DllImport("user32.dll")]
-    static extern void mouse_event(int dwFlags, int dx, int dy,
-                      int dwData, int dwExtraInfo);
+    static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
 
     [Flags]
     public enum MouseEventFlags
@@ -55,17 +52,19 @@ public class VdmDesktop : MonoBehaviour
     // Keyboard and Mouse
     private float m_lastShowClickStart = 0;
 
-	private void Awake()
-	{
-		m_line = GetComponent<LineRenderer>();
-		m_renderer = GetComponent<Renderer>();
-		m_collider = GetComponent<MeshCollider>();
-	}
-
-	void Start()
+    private void Awake()
     {
-	    m_manager = GetComponentInParent<VdmDesktopManager>();
-        m_manager.Connect(this);
+        m_line = GetComponent<LineRenderer>();
+        m_renderer = GetComponent<Renderer>();
+        m_collider = GetComponent<MeshCollider>();
+    }
+
+    void Start()
+    {
+        m_manager = GetComponentInParent<VdmDesktopManager>();
+        if (m_manager) {            
+            m_manager.Connect(this);
+        }
     }
 
 //    public void Update()
@@ -166,7 +165,7 @@ public class VdmDesktop : MonoBehaviour
             m_manager.KeyboardDistance = Mathf.Clamp(m_manager.KeyboardDistance, 0.2f, 100);
 
             m_positionNormal = Camera.main.transform.position + Camera.main.transform.rotation * new Vector3(0, 0, m_manager.KeyboardDistance);
-            m_positionNormal += m_manager.MultiMonitorPositionOffset * ScreenIndex;
+//            m_positionNormal += m_manager.MultiMonitorPositionOffset * ScreenIndex;
             m_rotationNormal = Camera.main.transform.rotation;            
         }
 
@@ -203,10 +202,11 @@ public class VdmDesktop : MonoBehaviour
                 m_manager.KeyboardZoomDistance += Input.GetAxisRaw("Mouse ScrollWheel");
                 m_manager.KeyboardZoomDistance = Mathf.Clamp(m_manager.KeyboardZoomDistance, 0.2f, 100);
 
+                var vector2Int = m_manager.GetCursorPos();
                 // Cursor position in world space
-                Vector3 cursorPos = m_manager.GetCursorPos();
-                cursorPos.x = cursorPos.x / m_manager.GetScreenWidth(Screen);
-                cursorPos.y = cursorPos.y / m_manager.GetScreenHeight(Screen);
+                var cursorPos = new Vector3(vector2Int.x, vector2Int.y);
+                cursorPos.x = cursorPos.x / m_manager.GetScreenWidth(ScreenId);
+                cursorPos.y = cursorPos.y / m_manager.GetScreenHeight(ScreenId);
                 cursorPos.y = 1 - cursorPos.y;
                 cursorPos.x = cursorPos.x - 0.5f;
                 cursorPos.y = cursorPos.y - 0.5f;
@@ -215,7 +215,7 @@ public class VdmDesktop : MonoBehaviour
                 Vector3 deltaCursor = transform.position - cursorPos;
                 
                 m_positionZoomed = Camera.main.transform.position + Camera.main.transform.rotation * new Vector3(0, 0, m_manager.KeyboardZoomDistance);
-                m_positionZoomed += m_manager.MultiMonitorPositionOffset * ScreenIndex;
+//                m_positionZoomed += m_manager.MultiMonitorPositionOffset * ScreenIndex;
                 m_rotationZoomed = Camera.main.transform.rotation;
 
                 m_positionZoomed += deltaCursor;
@@ -264,19 +264,26 @@ public class VdmDesktop : MonoBehaviour
                     m_line.enabled = false;
                 }
 
-                float dx = m_manager.GetScreenWidth(Screen);
-                float dy = m_manager.GetScreenHeight(Screen);
+                //
+                float dx = m_manager.GetScreenWidth(ScreenId);
+                float dy = m_manager.GetScreenHeight(ScreenId);
 
+                Vector2 offset = m_manager.GetScreenOffset(this);
+
+//                float vx = rcast.textureCoord.x * m_manager.textureScale;
+//                float vy = rcast.textureCoord.y * m_manager.textureScale;
                 float vx = rcast.textureCoord.x;
                 float vy = rcast.textureCoord.y;
 
                 vy = 1 - vy;
 
-                float x = (vx * dx);
-                float y = (vy * dy);
+                float x = (vx * dx) + offset.x;
+                float y = (vy * dy) + offset.y;
 
                 int iX = (int)x;
                 int iY = (int)y;
+
+//                Debug.Log($"{x} {y} {ScreenId}");
 
                 m_manager.SetCursorPos(iX, iY);
 

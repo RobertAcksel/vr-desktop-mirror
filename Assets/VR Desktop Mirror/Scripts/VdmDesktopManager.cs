@@ -16,7 +16,6 @@ public class VdmDesktopManager : MonoBehaviour {
     public KeyCode KeyboardZoom = KeyCode.LeftAlt;
 
 #if VDM_SteamVR
-
     public enum ViveButton
     {
         None = 0,
@@ -35,6 +34,7 @@ public class VdmDesktopManager : MonoBehaviour {
     [Tooltip("Vive touchpad as mouse left and right click")]
     public bool ViveTouchPadForClick = true;
 #endif
+
     [Tooltip("Distance of the screen if showed with keyboard/mouse. Change it at runtime with 'Show' + Mouse Wheel")]
     public float KeyboardDistance = 1;
     
@@ -52,9 +52,9 @@ public class VdmDesktopManager : MonoBehaviour {
     public bool LinearColorSpace = false;
     [Tooltip("Multimonitor - 0 for all, otherwise screen number 1..x")]
     public int MultiMonitorScreen = 0;
-    [Tooltip("Distance offset between monitors if MultiMonitorScreen==0")]
-    public Vector3 MultiMonitorPositionOffset = new Vector3(1,0,0);
-    
+    //[Tooltip("Distance offset between monitors if MultiMonitorScreen==0.")]
+    //public Vector3 MultiMonitorPositionOffset = new Vector3(1, 0, 0);
+
     [Tooltip("Render Scale - Supersampling. GPU intensive if >1")]
     [Range(1f, 2f)]
     public float RenderScale = 1.0f;
@@ -86,6 +86,8 @@ public class VdmDesktopManager : MonoBehaviour {
     private static extern int DesktopCapturePlugin_SetTexturePtr(int iDesk, IntPtr ptr);
     [DllImport("DesktopCapture")]
     private static extern IntPtr DesktopCapturePlugin_GetRenderEventFunc();
+    [DllImport("DesktopCapture")]
+    private static extern POINT DesktopCapturePlugin_GetOrigin(int iDesk);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -120,7 +122,7 @@ public class VdmDesktopManager : MonoBehaviour {
     struct MouseKeybdhardwareInputUnion
     {
         [FieldOffset(0)]
-        public MouseInputData mi;
+        public MOUSEINPUT mi;
 
         [FieldOffset(0)]
         public KEYBDINPUT ki;
@@ -144,7 +146,7 @@ public class VdmDesktopManager : MonoBehaviour {
         public short wParamL;
         public short wParamH;
     }
-    struct MouseInputData
+    struct MOUSEINPUT
     {
         public int dx;
         public int dy;
@@ -228,27 +230,25 @@ public class VdmDesktopManager : MonoBehaviour {
         int iScreenIndex = 0;
         for (int s = 0; s < nScreen; s++)
         {
-            var monitor = GameObject.Instantiate(monitorBase, monitorBase.transform.position, monitorBase.transform.rotation);
-
             if ((MultiMonitorScreen != 0) && (MultiMonitorScreen != (s + 1)))
                 continue;
 
+            var monitor = GameObject.Instantiate(monitorBase, monitorBase.transform.position, monitorBase.transform.rotation);
             monitor.name = "Monitor " + (s+1).ToString();
-            var desk = monitor.AddComponent<VdmDesktop>();
-            desk.Screen = s;
+            var desk = monitor.GetComponent<VdmDesktop>();
+            desk.ScreenId = s;
             desk.ScreenIndex = iScreenIndex;
-            iScreenIndex++;
             monitor.transform.SetParent(transform);
 
             monitor.SetActive(true);
-            if (s > 0)
-            {
+            if (iScreenIndex > 0){
 	            var position = monitor.transform.position;
-	            position.x += baseDesktop.transform.localScale.x;
+                //todo this should take the real screen size of the previous monitor into account
+	            position.x += baseDesktop.transform.localScale.x * iScreenIndex;
 	            monitor.transform.position = position;
-
             }
 
+            iScreenIndex++;
 	        yield return null;
             desk.Show();
         }
@@ -269,7 +269,7 @@ public class VdmDesktopManager : MonoBehaviour {
     void OnEnable()
     {
 #if VDM_SteamVR
-        SteamVR_Utils.Event.Listen("device_connected", OnDeviceConnected);
+        SteamVR_Events.DeviceConnected.Listen(OnDeviceConnected);
 #endif
 	    if (EnableHackUnityBug)
 	    {
@@ -286,7 +286,7 @@ public class VdmDesktopManager : MonoBehaviour {
     void OnDisable()
     {
 #if VDM_SteamVR
-        SteamVR_Utils.Event.Remove("device_connected", OnDeviceConnected);
+        SteamVR_Events.DeviceConnected.Remove(OnDeviceConnected);
 #endif
 
         HackStop();
@@ -365,51 +365,56 @@ public class VdmDesktopManager : MonoBehaviour {
         Monitors.Remove(winDesk);
     }
 
-    private void SetCursorPos(float x, float y)
+    public void SetCursorPos(float x, float y)
     {
         int iX = (int) x;
         int iY = (int) y;
         SetCursorPos(iX, iY);
     }
 
-    public Vector2 GetCursorPos()
+    public Vector2 GetScreenOffset(VdmDesktop vdmDesktop) {
+        var off = DesktopCapturePlugin_GetOrigin(vdmDesktop.ScreenId);
+        return new Vector2(off.X, off.Y);
+    }
+
+    public Vector2Int GetCursorPos()
     {
         POINT p;
         GetCursorPos(out p);
-        return new Vector2(p.X, p.Y);
+        return new Vector2Int(p.X, p.Y);
     }
 
-    private void SimulateMouseLeftDown()
+    public void SimulateMouseLeftDown()
     {
-        INPUT mouseDownInput = new INPUT();
-        mouseDownInput.type = SendInputEventType.InputMouse;
-        mouseDownInput.mkhi.mi.dwFlags = MouseEventFlags.MOUSEEVENTF_LEFTDOWN;
-        SendInput(1, ref mouseDownInput, Marshal.SizeOf(new INPUT()));
+        INPUT input = new INPUT {
+            type = SendInputEventType.InputMouse
+        };
+        input.mkhi.mi.dwFlags = MouseEventFlags.MOUSEEVENTF_LEFTDOWN;
+        SendInput(1, ref input, Marshal.SizeOf(new INPUT()));
     }
 
-    private void SimulateMouseLeftUp()
+    public void SimulateMouseLeftUp()
     {
-        INPUT mouseUpInput = new INPUT();
-        mouseUpInput.type = SendInputEventType.InputMouse;
-        mouseUpInput.mkhi.mi.dwFlags = MouseEventFlags.MOUSEEVENTF_LEFTUP;
-        SendInput(1, ref mouseUpInput, Marshal.SizeOf(new INPUT()));
+        INPUT input = new INPUT();
+        input.type = SendInputEventType.InputMouse;
+        input.mkhi.mi.dwFlags = MouseEventFlags.MOUSEEVENTF_LEFTUP;
+        SendInput(1, ref input, Marshal.SizeOf(new INPUT()));
     }
 
-    private void SimulateMouseRightDown()
+    public void SimulateMouseRightDown()
     {
-        INPUT mouseDownInput = new INPUT();
-        mouseDownInput.type = SendInputEventType.InputMouse;
-        mouseDownInput.mkhi.mi.dwFlags = MouseEventFlags.MOUSEEVENTF_RIGHTDOWN;
-        SendInput(1, ref mouseDownInput, Marshal.SizeOf(new INPUT()));
-
+        INPUT input = new INPUT();
+        input.type = SendInputEventType.InputMouse;
+        input.mkhi.mi.dwFlags = MouseEventFlags.MOUSEEVENTF_RIGHTDOWN;
+        SendInput(1, ref input, Marshal.SizeOf(new INPUT()));
     }
 
-    private void SimulateMouseRightUp()
+    public void SimulateMouseRightUp()
     {
-        INPUT mouseUpInput = new INPUT();
-        mouseUpInput.type = SendInputEventType.InputMouse;
-        mouseUpInput.mkhi.mi.dwFlags = MouseEventFlags.MOUSEEVENTF_RIGHTUP;
-        SendInput(1, ref mouseUpInput, Marshal.SizeOf(new INPUT()));
+        INPUT input = new INPUT();
+        input.type = SendInputEventType.InputMouse;
+        input.mkhi.mi.dwFlags = MouseEventFlags.MOUSEEVENTF_RIGHTUP;
+        SendInput(1, ref input, Marshal.SizeOf(new INPUT()));
     }
 
     IEnumerator DoRender()
@@ -428,7 +433,7 @@ public class VdmDesktopManager : MonoBehaviour {
         
         foreach (VdmDesktop winDesk in Monitors)
         {
-            int screen = winDesk.Screen;
+            int screen = winDesk.ScreenId;
             int width = DesktopCapturePlugin_GetWidth(screen);
             int height = DesktopCapturePlugin_GetHeight(screen);
             var tex = new Texture2D(width, height, TextureFormat.BGRA32, false, LinearColorSpace);
@@ -455,7 +460,7 @@ public class VdmDesktopManager : MonoBehaviour {
 #endif
 
 #if VDM_SteamVR
-    private void OnDeviceConnected(params object[] args)
+    private void OnDeviceConnected(int deviceId, bool isConnected)
     {
         RefreshControllers();        
     }
